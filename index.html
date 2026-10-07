@@ -25,14 +25,15 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:5px 3px;t
 </style></head><body><main>
 <nav><button id="n1" class="on">Nuovo</button><button id="n2">Journal</button><button id="n3">Andamento</button></nav>
 <div id="v1">
+<section><h2>Strategia</h2><select id="st"></select></section>
 <section><h2>Alert Telegram</h2><textarea id="al" placeholder="Incolla qui l'alert"></textarea>
 <button class="pri" id="rd">Leggi alert</button><div id="msg"></div></section>
 <section><h2>Trade</h2>
-<div class="row"><div><label>Data</label><input type="date" id="dt"></div><div><label>Strategia</label><select id="st"></select></div></div>
+<label>Data</label><input type="date" id="dt">
 <label>Partita</label><input id="pa">
 <div class="row"><div><label>Lega</label><input id="le"></div><div><label>Punteggio</label><input id="pu"></div></div>
 <div class="row"><div><label>Tipo</label><select id="ti"><option>BACK</option><option>LAY</option></select></div><div><label>Bookmaker</label><select id="bm"></select></div></div>
-<div class="row"><div><label>% Rischio</label><select id="rk"></select></div><div><label>Step</label><select id="sp"></select></div></div>
+<div class="row"><div><label>% Rischio</label><select id="rk"></select></div><div><label>Tranche usate (auto)</label><select id="sp" disabled></select></div></div>
 <small id="sg"></small>
 <div class="row"><div><label>Min ingresso</label><input id="mi" inputmode="numeric"></div><div><label>Min uscita</label><input id="mo" inputmode="numeric"></div></div>
 </section>
@@ -50,22 +51,28 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:5px 3px;t
 <div id="v2" class="hid"><section><h2>Trade salvati</h2><div id="ls"></div>
 <div class="row" style="margin-top:10px"><button class="sec" id="cp">Copia nuovi</button><button class="sec" id="ca">Copia tutti</button></div>
 <button class="sec" id="cs" style="margin-top:8px;width:100%">Scarica CSV</button>
+<h2 style="margin-top:14px">Strategie</h2><div id="sl"></div><button class="sec" id="sa" style="margin-top:8px;width:100%">+ Aggiungi strategia</button>
 <label>Bankroll iniziale (€)</label><input id="b0" inputmode="decimal"></section></div>
 <div id="v3" class="hid"><section><h2>Andamento bankroll</h2><div id="ch"></div></section><section><h2>Statistiche</h2><div id="ks"></div></section><section><h2>Per strategia</h2><div id="bs"></div></section></div>
 </main>
 <script>
 const $=i=>document.getElementById(i),KEY='splittrader_journal',SK='splittrader_set';
 const opt=a=>a.map(x=>`<option>${x}</option>`).join(''),blank='<option></option>';
-const STR=['Split Over 1.5','Split Over 2.5','Split Over 3.5','Split Over HT','Draw Balance','FHG 0.5','Lay Sfavorita','Lay The Draw','Draw Balance HT','Classic Snipe','Split Over','Over 1.5 HT','FHG Double','Over Successivo'];
-const MAP=[[/SPLIT OVER/,'Split Over 1.5','BACK'],[/DRAW BALANCE/,'Draw Balance','LAY']];
+const STR=['Split Over 1.5','Split Over 2.5','Split Over 3.5','Split Over HT','Over 0.5','Over 1.5','Over 2.5','Over 3.5','FHG 0.5','Lay Sfavorita','Lay The Draw','Over 1.5 HT','FHG Double','Over Successivo'];
+const PROF={'Split Over 1.5':'BACK','Split Over 2.5':'BACK','Split Over 3.5':'BACK','Split Over HT':'BACK','Over 0.5':'BACK','Over 1.5':'BACK','Over 2.5':'BACK','Over 3.5':'BACK','Lay Sfavorita':'LAY','Lay The Draw':'LAY','FHG 0.5':'BACK','Over 1.5 HT':'BACK','FHG Double':'BACK','Over Successivo':'BACK'};
+const MAP=[[/SPLIT OVER/,'Split Over 1.5','BACK']];
 const set=Object.assign({bm:'Betfair',rk:'1',b0:''},JSON.parse(localStorage.getItem(SK)||'{}')),saveSet=()=>localStorage.setItem(SK,JSON.stringify(set));
-$('st').innerHTML=opt(STR);$('bm').innerHTML=opt(['Betfair','Betflag','SharpX','BlackFair']);$('rk').innerHTML=opt(['0.5','1','2','3','5']);$('sp').innerHTML=opt(['1','2','3','4']);
+const SS='splittrader_strat2';
+let strat=JSON.parse(localStorage.getItem(SS)||'null')||STR.map(n=>({n,t:PROF[n]||''}));
+const saveStrat=()=>localStorage.setItem(SS,JSON.stringify(strat)),profT=n=>(strat.find(x=>x.n===n)||{}).t||'';
+function fillSt(){const v=$('st').value;$('st').innerHTML='<option value="">— scegli strategia —</option>'+opt(strat.map(x=>x.n));$('st').value=v}fillSt();$('bm').innerHTML=opt(['Betfair','Betflag','SharpX','BlackFair']);$('rk').innerHTML=opt(['0.5','1','2','3','5']);$('sp').innerHTML=opt(['1','2','3','4']);
 $('tu').innerHTML=blank+opt(['W','L1','L2','FreeBet']);$('em').innerHTML=blank+opt(['1','2','3','4','5']);
 $('bm').value=set.bm;$('rk').value=set.rk;$('b0').value=set.b0;$('dt').valueAsDate=new Date();
 $('tr').innerHTML=[1,2,3,4].map(i=>`<div class="row3"><span>${i}</span><input id="q${i}" inputmode="decimal" placeholder="quota"><input id="s${i}" inputmode="decimal" placeholder="stake €"></div>`).join('');
-function parse(raw){const text=raw.replace(/\r/g,''),clean=s=>s.replace(/[^\p{L}\p{N}\s.'’′\-–:&()\/]/gu,'').replace(/\s+/g,' ').trim();
+function parse(raw,forced){const text=raw.replace(/\r/g,''),clean=s=>s.replace(/[^\p{L}\p{N}\s.'’′\-–:&()\/]/gu,'').replace(/\s+/g,' ').trim();
 const lines=text.split('\n').map(l=>l.trim()).filter(Boolean),o={partita:'',lega:'',punteggio:'',minuto:'',quota:'',tipo:'',strategia:''};
 const title=clean(lines[0]||'').toUpperCase();for(const [re,s,t] of MAP)if(re.test(title)){o.strategia=s;o.tipo=t;break}
+if(forced){o.strategia=forced;o.tipo=profT(forced)}
 for(const l of lines)if(l.includes('🏆')){o.lega=clean(l.replace('🏆',''));break}
 let m;for(const l of lines)if(m=clean(l).match(/^(.+?)\s+vs\.?\s+(.+)$/i)){o.partita=m[1]+' - '+m[2];break}
 for(const l of lines){const c=clean(l);if(/^(Score|Corners|Shots|xG|Odds|Live|Kick)/i.test(c))continue;
@@ -75,7 +82,7 @@ if(o.strategia==='Draw Balance')o.punteggio='0-0';
 if((m=text.match(/(?:Minuto:?\s*|⏱\uFE0F?\s*)(\d+)\s*['’′]/u))||(m=text.match(/(\d+)\s*['’′]/)))o.minuto=m[1];
 if(o.strategia==='Draw Balance'&&(m=text.match(/Live[^\n]*\n\s*([\d.,]+)\s*-\s*([\d.,]+)\s*-\s*([\d.,]+)/i)))o.quota=m[2].replace(',','.');
 return o}
-$('rd').onclick=()=>{const o=parse($('al').value);if(!o.partita){$('msg').textContent='Partita non riconosciuta: controlla il testo incollato.';return}
+$('rd').onclick=()=>{const o=parse($('al').value,$('st').value);if(!o.partita){$('msg').textContent='Partita non riconosciuta: controlla il testo incollato.';return}
 $('pa').value=o.partita;$('le').value=o.lega;$('pu').value=o.punteggio;$('mi').value=o.minuto;if(o.strategia)$('st').value=o.strategia;if(o.tipo)$('ti').value=o.tipo;
 if(o.quota)$('q1').value=o.quota;plM=false;$('msg').textContent='Compilato. Controlla i campi'+(o.quota?'':' e inserisci la quota delle tranche')+'.';calc()};
 const n=i=>parseFloat(String($(i).value).replace(',','.')),f2=x=>isFinite(x)?x.toFixed(2):'–',load=()=>JSON.parse(localStorage.getItem(KEY)||'[]');
@@ -85,9 +92,10 @@ function calc(){const lay=$('ti').value==='LAY';let S=0,R=0,risk=0,av=0;
 if(lay){const q=n('q1'),s=n('s1');if(q>1&&s>0){S=s;risk=s*(q-1);av=q}}
 else for(let i=1;i<=4;i++){const q=n('q'+i),s=n('s'+i);if(q>0&&s>0){S+=s;R+=q*s}}
 if(!lay&&S){risk=S;av=R/S}
+const cnt=lay?(S?1:0):[1,2,3,4].filter(i=>n('q'+i)>0&&n('s'+i)>0).length;if(cnt)$('sp').value=String(cnt);
 $('th').textContent=lay?'Lay (quota e stake)':'Tranche (back)';
 const c=(n('co')||0)/100,rt=(n('rs')||50)/100,qe=n('qe');
-if(!lay&&!plM){if(S&&qe>0){const g=R/qe-S;$('pl').value((g>0?g*(1-c):g).toFixed(2))}else $('pl').value=''}
+if(!lay&&!plM){if(S&&qe>0){const g=R/qe-S;$('pl').value=(g>0?g*(1-c):g).toFixed(2)}else $('pl').value=''}
 const sg=$('sg');if(+set.b0>0){const r=+$('rk').value/100,b=bankNow();const x=lay?(n('q1')>1?b*r/(n('q1')-1):0):b*r;sg.textContent='Bankroll '+f2(b)+' € · stake suggerito '+(x?f2(x)+' €':'–')}else sg.textContent='';
 $('sk').textContent=S?f2(S)+' / '+f2(risk)+' €':'–';$('av').textContent=S?f2(av):'–';
 $('be').textContent=!lay&&S?f2(av):'–';$('ru').textContent=!lay&&S?f2(av/(1-rt)):'–';
@@ -98,16 +106,23 @@ const cls=pl>0?'g':pc<=-rt?'r':'a';$('pc').className='big '+cls;$('stt').classNa
 $('stt').textContent=(pl>=0?'+':'')+f2(pl)+' € · '+(pl>0?'Green up':pc<=-rt?'Red up: soglia raggiunta':'In perdita, sotto soglia')}
 $('pl').addEventListener('input',()=>{plM=$('pl').value!==''});
 document.querySelectorAll('#v1 input,#v1 select').forEach(e=>e.addEventListener('input',calc));
+$('st').addEventListener('change',()=>{const t=profT($('st').value);if(t)$('ti').value=t;calc()});
 $('bm').addEventListener('change',()=>{set.bm=$('bm').value;saveSet()});$('rk').addEventListener('change',()=>{set.rk=$('rk').value;saveSet()});
 $('b0').addEventListener('input',()=>{set.b0=$('b0').value;saveSet()});
-$('sv').onclick=()=>{if(!$('pa').value.trim()){$('msg').textContent='Inserisci la partita prima di salvare.';return}
+$('sv').onclick=()=>{if(!$('st').value){$('msg').textContent='Scegli la strategia prima di salvare.';return}
+if(!$('pa').value.trim()){$('msg').textContent='Inserisci la partita prima di salvare.';return}
 calc();const lay=$('ti').value==='LAY',qs=[1,2,3,4].map(i=>[n('q'+i),n('s'+i)]).filter(x=>x[0]>0&&x[1]>0),S=lay?(qs[0]?qs[0][1]:''):qs.reduce((a,x)=>a+x[1],0),av=lay?(qs[0]?qs[0][0]:''):(S?qs.reduce((a,x)=>a+x[0]*x[1],0)/S:'');
 const v=i=>$(i).value,j=load();j.unshift({d:v('dt'),p:v('pa').trim(),pu:v('pu'),st:v('st'),ti:v('ti'),bm:v('bm'),rk:v('rk'),sp:v('sp'),le:v('le'),mi:v('mi'),mo:v('mo'),av,S,
 rkE:cur?cur.risk:(lay&&qs[0]?qs[0][1]*(qs[0][0]-1):S),qe:v('qe'),tu:v('tu'),em:v('em'),pl:cur?cur.pl:'',pc:cur?cur.pc:''});
 localStorage.setItem(KEY,JSON.stringify(j));
-['al','pa','le','pu','mi','mo','qe','tu','em','pl'].forEach(i=>$(i).value='');for(let i=1;i<=4;i++){$('q'+i).value='';$('s'+i).value=''}
-plM=false;$('msg').textContent='Salvato nel journal.';calc();show(2)};
+['st','al','pa','le','pu','mi','mo','qe','tu','em','pl'].forEach(i=>$(i).value='');for(let i=1;i<=4;i++){$('q'+i).value='';$('s'+i).value=''}
+$('sp').value='1';plM=false;$('msg').textContent='Salvato nel journal.';calc();show(2)};
 function render(){const j=load();$('ls').innerHTML=j.length?j.map((t,i)=>`<div class="tr"><div><b>${t.p}</b><br><small>${t.d} · ${t.st} · ${t.bm}${t.mi?' · '+t.mi+"'":''}</small></div><div style="text-align:right"><b class="${t.pl>0?'g':t.pl<0?'r':''}">${t.pl===''?'–':(t.pl>=0?'+':'')+(+t.pl).toFixed(2)+' €'}</b><br><small>${t.pc===''?'':(t.pc*100).toFixed(1)+'%'}</small> <button class="sec" onclick="del(${i})">✕</button></div></div>`).join(''):'<small>Nessun trade salvato.</small>'}
+function renderStrat(){$('sl').innerHTML=strat.map((x,i)=>`<div class="tr"><div>${x.n} <small>${x.t||'–'}</small></div><div><button class="sec" onclick="rn(${i})">✎</button> <button class="sec" onclick="dl(${i})">✕</button></div></div>`).join('')}
+window.rn=i=>{const o=strat[i].n,nn=(prompt('Nuovo nome',o)||'').trim();if(!nn||nn===o)return;if(strat.some(x=>x.n===nn)){alert('Esiste già una strategia con questo nome');return}
+strat[i].n=nn;saveStrat();const j=load();j.forEach(t=>{if(t.st===o)t.st=nn});localStorage.setItem(KEY,JSON.stringify(j));fillSt();renderStrat();render()};
+window.dl=i=>{if(!confirm('Togliere la strategia dal menu? I trade già salvati restano.'))return;strat.splice(i,1);saveStrat();fillSt();renderStrat()};
+$('sa').onclick=()=>{const nn=(prompt('Nome nuova strategia')||'').trim();if(!nn||strat.some(x=>x.n===nn))return;const t=(prompt('Tipo: BACK o LAY','BACK')||'').toUpperCase();strat.push({n:nn,t:t==='LAY'?'LAY':'BACK'});saveStrat();fillSt();renderStrat()};
 window.del=i=>{if(!confirm('Eliminare il trade?'))return;const j=load();j.splice(i,1);localStorage.setItem(KEY,JSON.stringify(j));render()};
 const H=['Data','Partita','Punteggio','Strategia','Tipo','Bookmaker','% Rischio','Step','Lega','Min Entrata','Min Uscita','Quota media','Stake','Rischio €','Quota Uscita','Tipo Uscita','Emozione','P&L'];
 const nu=(x,d)=>x===''||x==null?'':(+x).toFixed(d).replace('.',','),qn=x=>String(x).replace('.',',');
@@ -126,7 +141,7 @@ const w=j.filter(t=>+t.pl>0).length,tot=c-b0,K=[['Trade chiusi',j.length],['Stri
 $('ks').innerHTML=K.map(x=>`<div class="kv"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('');
 const g={};j.forEach(t=>{(g[t.st]=g[t.st]||{n:0,w:0,p:0});g[t.st].n++;g[t.st].p+=+t.pl;if(+t.pl>0)g[t.st].w++});
 $('bs').innerHTML='<table><tr><th>Strategia</th><th>N</th><th>SR</th><th>P&L €</th></tr>'+Object.keys(g).map(k=>`<tr><td>${k}</td><td>${g[k].n}</td><td>${(g[k].w/g[k].n*100).toFixed(0)}%</td><td class="${g[k].p>=0?'g':'r'}">${f2(g[k].p)}</td></tr>`).join('')+'</table>'}
-function show(k){[1,2,3].forEach(i=>{$('v'+i).classList.toggle('hid',i!==k);$('n'+i).className=i===k?'on':''});if(k===2)render();if(k===3)stats()}
+function show(k){[1,2,3].forEach(i=>{$('v'+i).classList.toggle('hid',i!==k);$('n'+i).className=i===k?'on':''});if(k===2){render();renderStrat()}if(k===3)stats()}
 [1,2,3].forEach(i=>$('n'+i).onclick=()=>show(i));calc();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script></body></html>
